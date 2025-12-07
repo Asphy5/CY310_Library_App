@@ -3,6 +3,7 @@ require_once __DIR__ . '/../src/config.php';
 require_once __DIR__ . '/../src/auth.php';
 
 $csrf = csrf_token(); 
+$errors = [];
 
 // Registration form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') { // Only accept POST requests
@@ -12,18 +13,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') { // Only accept POST requests
   }
 
   // Sanitize the inputs
-  // Make sure the inputs aren't null
   $fname = trim($_POST['fname'] ?? '');
   $lname = trim($_POST['lname'] ?? '');
   $uname = trim($_POST['uname'] ?? '');
-  $pwd = $_POST['pwd'] ?? '';
+  $pwd = trim($_POST['pwd'] ?? '');
   $email = filter_var($_POST['email'] ?? '', FILTER_VALIDATE_EMAIL);
 
   // Make sure the lengths are valid
   if (strlen($fname) < 1 || strlen($lname) < 1) {
-      $error = "First and last name are required.";
+      $errors[] = "First and last name are required.";
   } elseif (strlen($uname) < 8 || strlen($pwd) < 8 || !$email) {
-      $error = "Username, valid email, and password (>=8 chars) required.";
+      $errors[] = "Username, valid email, and password (>=8 chars) required.";
   } else {
     // Make sure the username and email are unique
     $stmt = $pdo->prepare("
@@ -33,10 +33,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') { // Only accept POST requests
       OR email = :e"
     );
 
+    // Check password complexity
+    // Require at least one uppercase letter
+    if (!preg_match('/[A-Z]/', $pwd)) {
+        $errors[] = "Password must contain at least one uppercase letter.";
+    }
+
+    // Require at least one lowercase letter
+    if (!preg_match('/[a-z]/', $pwd)) {
+        $errors[] = "Password must contain at least one lowercase letter.";
+    }
+
+    // Require at least one digit
+    if (!preg_match('/[0-9]/', $pwd)) {
+        $errors[] = "Password must contain at least one digit.";
+    }
+
+    // Require at least one special character (e.g., !@#$%^&*)
+    if (!preg_match('/[^a-zA-Z0-9]/', $pwd)) {
+        $errors[] = "Password must contain at least one special character.";
+    }
+
     $stmt->execute([':u'=>$uname, ':e'=>$email]);
     if ($stmt->fetchColumn() > 0) {
-        $error = "Username or email already exists.";
-    } else {
+        $errors[] = "Username or email already exists.";
+    }
+    if (empty($errors)) {
+      // Insert the new user
       try {
         $pdo->beginTransaction();
 
@@ -68,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') { // Only accept POST requests
         // Used for debug
         // $msg = "Database error: " . $e->getMessage();
 
-        $error = "Registration failed due to a database error.";
+        $errors[] = "Registration failed due to a database error.";
       }
     }
   }
@@ -133,8 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') { // Only accept POST requests
 <div class="box">
   <h2>Create Account</h2>
 
-  <?php if (!empty($error)): ?>
-    <div class="error"><?= htmlspecialchars($error) ?></div>
+  <?php if ($errors): ?>
+      <div style="color:red"><ul><?php foreach ($errors as $e) echo "<li>".htmlspecialchars($e)."</li>"; ?></ul></div>
   <?php endif; ?>
 
   <form method="POST" action="">
